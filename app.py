@@ -1,84 +1,77 @@
 import streamlit as st
-from transformers import BertForQuestionAnswering, BertTokenizer, pipeline
+from transformers import pipeline
 from datasets import load_dataset
+
+import pennylane as qml
+from pennylane import numpy as np
 import torch
-import numpy as np
+import torch.nn as nn
+import torch.optim as optim
 
-# Function to initialize the IBMQ account
-def initialize_ibmq(api_key):
-    from qiskit import IBMQ
-    IBMQ.save_account(api_key, overwrite=True)
-    IBMQ.load_account()
-    provider = IBMQ.get_provider(hub='ibm-q')
-    return provider
+# Quantum circuit
+n_qubits = 4
+dev = qml.device("default.qubit", wires=n_qubits)
 
-# Quantum computing imports and functions
-def create_quantum_circuit():
-    from qiskit import QuantumCircuit, Aer, transpile, assemble
-    from qiskit.visualization import plot_histogram
-    
-    # Create a simple quantum circuit
-    qc = QuantumCircuit(1, 1)
-    qc.h(0)
-    qc.measure(0, 0)
-    
-    # Simulate the quantum circuit
-    simulator = Aer.get_backend('qasm_simulator')
-    transpiled_qc = transpile(qc, simulator)
-    qobj = assemble(transpiled_qc)
-    result = simulator.run(qobj).result()
-    
-    return result.get_counts(qc)
+@qml.qnode(dev)
+def quantum_circuit(inputs):
+    qml.AngleEmbedding(inputs, wires=range(n_qubits))
+    qml.BasicEntanglerLayers(weights=np.random.random(size=(n_qubits, n_qubits)), wires=range(n_qubits))
+    return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
 
-# Function to initialize the local model
-def initialize_local_model():
-    from sklearn.ensemble import RandomForestClassifier
-    model = RandomForestClassifier()
-    return model
+class QuantumCircuitWrapper(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.q_params = nn.Parameter(torch.rand(n_qubits))
 
-# Function to predict with the local model
-def predict_with_local_model(model, data):
-    return model.predict(data)
+    def forward(self, x):
+        q_out = torch.tensor([quantum_circuit(xi) for xi in x])
+        return q_out
 
-# Streamlit app
-st.title("Quantum Computing and AI Integration")
+class HybridModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(768, 128)
+        self.qc = QuantumCircuitWrapper()
+        self.fc2 = nn.Linear(n_qubits, 2)  # Adjust output size as necessary
 
-# Input for IBMQ API key
-api_key = st.text_input("Enter your IBMQ API Key:", type="password")
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.qc(x)
+        x = self.fc2(x)
+        return x
 
-if api_key:
-    try:
-        provider = initialize_ibmq(api_key)
-        st.success("Successfully initialized IBMQ account.")
-    except Exception as e:
-        st.error(f"Error initializing IBMQ account: {e}")
+# Load dataset
+dataset = load_dataset('squad', split='train[:1%]')
 
-    # Initialize local AI model
-    model = initialize_local_model()
-    st.success("Successfully initialized local AI model.")
+# Pretrained tokenizer and model
+tokenizer = pipeline('question-answering')
+model = HybridModel()
 
-    # Create a quantum circuit and make predictions
-    qc = create_quantum_circuit()
+# Training function
+def train(model, dataset, epochs=1):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    # Convert the quantum circuit result to a format suitable for prediction
-    qc_data = np.array([[qc.get(key, 0) for key in sorted(qc.keys())]])
+    for epoch in range(epochs):
+        for data in dataset:
+            question, context = data['question'], data['context']
+            inputs = tokenizer.encode_plus(question, context, return_tensors='pt')
+            labels = data['answers']['text']
+            outputs = model(inputs['input_ids'])
+            loss = criterion(outputs, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        print(f'Epoch {epoch+1}/{epochs}, Loss: {loss.item()}')
 
-    # Prepare training data
-    st.write("Training the model with sample data...")
-    X_train = np.random.rand(10, len(qc_data[0]))  # Dummy features for training
-    y_train = np.random.randint(2, size=10)       # Dummy labels for training
-    model.fit(X_train, y_train)
-    st.success("Model training completed.")
+st.title("Quantum AI Question Answering")
 
-    prediction = predict_with_local_model(model, qc_data)
-    st.write("Quantum circuit prediction:", prediction)
+question = st.text_input("Enter your question:")
+context = st.text_area("Enter the context:")
 
-    # Query handling with Hugging Face Transformers
-    question = st.text_input("Enter a question for the AI model:")
-    if question:
-        qa_pipeline = pipeline("question-answering")
-        context = "The Theory of Everything (ToE) is a hypothetical framework that fully explains and links together all physical aspects of the universe."
-        result = qa_pipeline(question=question, context=context)
-        st.write("Answer:", result['answer'])
-else:
-    st.info("Please enter your IBMQ API Key to proceed.")
+if st.button("Ask"):
+    with st.spinner("Processing..."):
+        inputs = tokenizer(question, context, return_tensors='pt')
+        outputs = model(inputs['input_ids'])
+        answer = tokenizer.decode(outputs[0])
+        st.write("Answer:", answer)
