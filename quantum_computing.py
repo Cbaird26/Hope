@@ -1,11 +1,18 @@
 from qiskit import IBMQ, QuantumCircuit, Aer, transpile, assemble
 from qiskit.visualization import plot_histogram
+import streamlit as st
 
 def initialize_ibmq():
-    # Load your IBM Q account
-    IBMQ.load_account()
-    provider = IBMQ.get_provider(hub='ibm-q')
-    return provider
+    api_key = st.text_input("Enter your IBMQ API Key:", type="password")
+    if st.button("Load IBMQ Account"):
+        IBMQ.save_account(api_key)
+        IBMQ.load_account()
+        provider = IBMQ.get_provider(hub='ibm-q')
+        st.success("IBMQ account loaded successfully!")
+        return provider
+    else:
+        st.warning("Please enter your IBMQ API Key and click 'Load IBMQ Account'.")
+        return None
 
 def create_quantum_circuit():
     # Create a simple quantum circuit
