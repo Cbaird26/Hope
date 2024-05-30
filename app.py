@@ -1,11 +1,8 @@
 import streamlit as st
-from transformers import BertForQuestionAnswering, BertTokenizer, Trainer, TrainingArguments
+from transformers import BertForQuestionAnswering, BertTokenizer, pipeline
 from datasets import load_dataset
 import torch
 import numpy as np
-
-# Initialize Hugging Face pipeline
-qa_pipeline = None
 
 # Function to initialize the IBMQ account
 def initialize_ibmq(api_key):
@@ -15,7 +12,7 @@ def initialize_ibmq(api_key):
     provider = IBMQ.get_provider(hub='ibm-q')
     return provider
 
-# Quantum computing imports
+# Quantum computing imports and functions
 def create_quantum_circuit():
     from qiskit import QuantumCircuit, Aer, transpile, assemble
     from qiskit.visualization import plot_histogram
@@ -77,8 +74,7 @@ if api_key:
     # Query handling with Hugging Face Transformers
     question = st.text_input("Enter a question for the AI model:")
     if question:
-        if not qa_pipeline:
-            qa_pipeline = pipeline("question-answering")
+        qa_pipeline = pipeline("question-answering")
         context = "The Theory of Everything (ToE) is a hypothetical framework that fully explains and links together all physical aspects of the universe."
         result = qa_pipeline(question=question, context=context)
         st.write("Answer:", result['answer'])
