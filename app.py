@@ -63,10 +63,12 @@ if api_key:
     # Convert the quantum circuit result to a format suitable for prediction
     qc_data = np.array([[qc.get(key, 0) for key in sorted(qc.keys())]])
 
-    # Fit the model with dummy data for demonstration (replace with real training data)
-    X_train = np.random.rand(10, len(qc_data[0]))
-    y_train = np.random.randint(2, size=10)
+    # Prepare training data
+    st.write("Training the model with sample data...")
+    X_train = np.random.rand(10, len(qc_data[0]))  # Dummy features for training
+    y_train = np.random.randint(2, size=10)       # Dummy labels for training
     model.fit(X_train, y_train)
+    st.success("Model training completed.")
 
     prediction = predict_with_local_model(model, qc_data)
     st.write("Quantum circuit prediction:", prediction)
